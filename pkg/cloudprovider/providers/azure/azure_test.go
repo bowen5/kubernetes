@@ -111,7 +111,7 @@ func TestParseConfig(t *testing.T) {
 		UseInstanceMetadata:               true,
 		VMType:                            "standard",
 		VnetName:                          "vnetName",
-		NetworkResourceResourceGroup:                 "networkResourceResourceGroup",
+		NetworkResourceResourceGroup:      "networkResourceResourceGroup",
 	}
 
 	buffer := bytes.NewBufferString(azureConfig)
