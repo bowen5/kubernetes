@@ -69,10 +69,12 @@ func TestParseConfig(t *testing.T) {
 		"subnetName": "subnetName",
 		"subscriptionId": "subscriptionId",
 		"tenantId": "tenantId",
+		"networkResourceSubscriptionId": "networkResourceSubscriptionId",
+		"networkResourceTenantId": "networkResourceTenantId",
 		"useInstanceMetadata": true,
 		"useManagedIdentityExtension": true,
 		"vnetName": "vnetName",
-		"vnetResourceGroup": "vnetResourceGroup",
+		"networkResourceResourceGroup": "networkResourceResourceGroup",
 		vmType: "standard"
 	}`
 	expected := &Config{
@@ -84,6 +86,8 @@ func TestParseConfig(t *testing.T) {
 			Cloud:                       "AzurePublicCloud",
 			SubscriptionID:              "subscriptionId",
 			TenantID:                    "tenantId",
+			NetworkResourceSubscriptionId:              "networkResourceSubscriptionId",
+			NetworkResourceTenantId:                    "networkResourceTenantId",
 			UseManagedIdentityExtension: true,
 		},
 		CloudProviderBackoff:              true,
@@ -107,7 +111,7 @@ func TestParseConfig(t *testing.T) {
 		UseInstanceMetadata:               true,
 		VMType:                            "standard",
 		VnetName:                          "vnetName",
-		VnetResourceGroup:                 "vnetResourceGroup",
+		NetworkResourceResourceGroup:      "networkResourceResourceGroup",
 	}
 
 	buffer := bytes.NewBufferString(azureConfig)
@@ -939,9 +943,11 @@ func getTestCloud() (az *Cloud) {
 			AzureAuthConfig: auth.AzureAuthConfig{
 				TenantID:       "tenant",
 				SubscriptionID: "subscription",
+				NetworkResourceTenantID:       "tenant",
+				NetworkResourceSubscriptionID: "subscription",
 			},
 			ResourceGroup:                "rg",
-			VnetResourceGroup:            "rg",
+			NetworkResourceResourceGroup: "rg",
 			Location:                     "westus",
 			VnetName:                     "vnet",
 			SubnetName:                   "subnet",
@@ -960,7 +966,7 @@ func getTestCloud() (az *Cloud) {
 	az.DisksClient = newFakeDisksClient()
 	az.InterfacesClient = newFakeAzureInterfacesClient()
 	az.LoadBalancerClient = newFakeAzureLBClient()
-	az.PublicIPAddressesClient = newFakeAzurePIPClient(az.Config.SubscriptionID)
+	az.PublicIPAddressesClient = newFakeAzurePIPClient(az.Config.NetworkResourceSubscriptionID)
 	az.RoutesClient = newFakeRoutesClient()
 	az.RouteTablesClient = newFakeRouteTablesClient()
 	az.SecurityGroupsClient = newFakeAzureNSGClient()
@@ -1193,7 +1199,7 @@ func getTestSecurityGroup(az *Cloud, services ...v1.Service) *network.SecurityGr
 	defer cancel()
 	az.SecurityGroupsClient.CreateOrUpdate(
 		ctx,
-		az.ResourceGroup,
+		az.NetworkResourceResourceGroup,
 		az.SecurityGroupName,
 		sg)
 
@@ -1807,14 +1813,14 @@ func addTestSubnet(t *testing.T, az *Cloud, svc *v1.Service) {
 	}
 
 	subnetID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s",
-		az.SubscriptionID,
-		az.VnetResourceGroup,
+		az.NetworkResourceSubscriptionID,
+		az.NetworkResourceResourceGroup,
 		az.VnetName,
 		subName)
 
 	ctx, cancel := getContextWithCancel()
 	defer cancel()
-	_, err := az.SubnetsClient.CreateOrUpdate(ctx, az.VnetResourceGroup, az.VnetName, subName,
+	_, err := az.SubnetsClient.CreateOrUpdate(ctx, az.NetworkResourceResourceGroup, az.VnetName, subName,
 		network.Subnet{
 			ID:   &subnetID,
 			Name: &subName,

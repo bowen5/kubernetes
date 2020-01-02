@@ -89,8 +89,8 @@ type Config struct {
 	Location string `json:"location" yaml:"location"`
 	// The name of the VNet that the cluster is deployed in
 	VnetName string `json:"vnetName" yaml:"vnetName"`
-	// The name of the resource group that the Vnet is deployed in
-	VnetResourceGroup string `json:"vnetResourceGroup" yaml:"vnetResourceGroup"`
+	// The name of the resource group that the network resources are deployed in
+	NetworkResourceResourceGroup string `json:"networkResourceResourceGroup" yaml:"networkResourceResourceGroup"`
 	// The name of the subnet that the cluster is deployed in
 	SubnetName string `json:"subnetName" yaml:"subnetName"`
 	// The name of the security group attached to the cluster's subnet
@@ -242,7 +242,12 @@ func NewCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 		return nil, err
 	}
 
-	servicePrincipalToken, err := auth.GetServicePrincipalToken(&config.AzureAuthConfig, env)
+	servicePrincipalToken, err := auth.GetMultiTenantServicePrincipalToken(&config.AzureAuthConfig, env)
+	if err != nil {
+		return nil, err
+	}
+
+	networkServicePrincipalToken, err := auth.GetNetworkServicePrincipalToken(&config.AzureAuthConfig, env)
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +306,14 @@ func NewCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 		}
 	}
 
+	azClientNetworkConfig := &azClientConfig{
+		subscriptionID:          config.NetworkResourceSubscriptionID,
+		resourceManagerEndpoint: env.ResourceManagerEndpoint,
+		servicePrincipalToken:   networkServicePrincipalToken,
+		rateLimiterReader:       operationPollRateLimiter,
+		rateLimiterWriter:       operationPollRateLimiterWrite,
+	}
+
 	azClientConfig := &azClientConfig{
 		subscriptionID:          config.SubscriptionID,
 		resourceManagerEndpoint: env.ResourceManagerEndpoint,
@@ -308,6 +321,7 @@ func NewCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 		rateLimiterReader:       operationPollRateLimiter,
 		rateLimiterWriter:       operationPollRateLimiterWrite,
 	}
+
 	az := Cloud{
 		Config:             *config,
 		Environment:        *env,
@@ -318,14 +332,14 @@ func NewCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 
 		DisksClient:                     newAzDisksClient(azClientConfig),
 		RoutesClient:                    newAzRoutesClient(azClientConfig),
-		SubnetsClient:                   newAzSubnetsClient(azClientConfig),
+		SubnetsClient:                   newAzSubnetsClient(azClientNetworkConfig),
 		InterfacesClient:                newAzInterfacesClient(azClientConfig),
 		RouteTablesClient:               newAzRouteTablesClient(azClientConfig),
-		LoadBalancerClient:              newAzLoadBalancersClient(azClientConfig),
-		SecurityGroupsClient:            newAzSecurityGroupsClient(azClientConfig),
+		LoadBalancerClient:              newAzLoadBalancersClient(azClientNetworkConfig),
+		SecurityGroupsClient:            newAzSecurityGroupsClient(azClientNetworkConfig),
 		StorageAccountClient:            newAzStorageAccountClient(azClientConfig),
 		VirtualMachinesClient:           newAzVirtualMachinesClient(azClientConfig),
-		PublicIPAddressesClient:         newAzPublicIPAddressesClient(azClientConfig),
+		PublicIPAddressesClient:         newAzPublicIPAddressesClient(azClientNetworkConfig),
 		VirtualMachineSizesClient:       newAzVirtualMachineSizesClient(azClientConfig),
 		VirtualMachineScaleSetsClient:   newAzVirtualMachineScaleSetsClient(azClientConfig),
 		VirtualMachineScaleSetVMsClient: newAzVirtualMachineScaleSetVMsClient(azClientConfig),

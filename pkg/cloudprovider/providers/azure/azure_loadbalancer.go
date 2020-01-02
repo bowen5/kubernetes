@@ -1548,7 +1548,7 @@ func (az *Cloud) getPublicIPAddressResourceGroup(service *v1.Service) string {
 		}
 	}
 
-	return az.ResourceGroup
+	return az.NetworkResourceResourceGroup
 }
 
 // Check if service requires an internal load balancer.

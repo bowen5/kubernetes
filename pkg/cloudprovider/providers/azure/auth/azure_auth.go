@@ -50,6 +50,10 @@ type AzureAuthConfig struct {
 	UserAssignedIdentityID string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
 	// The ID of the Azure Subscription that the cluster is deployed in
 	SubscriptionID string `json:"subscriptionId" yaml:"subscriptionId"`
+	// The AAD Tenant ID of the Network resources
+	NetworkResourceTenantID string `json:"networkResourceTenantId" yaml:"networkResourceTenantId"`
+	// The ID of the Azure Subscription that the cluster's network resources are deployed in
+	NetworkResourceSubscriptionID string `json:"networkResourceSubscriptionId" yaml:"networkResourceSubscriptionId"`
 }
 
 // GetServicePrincipalToken creates a new service principal token based on the configuration
@@ -101,6 +105,45 @@ func GetServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (
 			config.AADClientID,
 			certificate,
 			privateKey,
+			env.ServiceManagementEndpoint)
+	}
+
+	return nil, fmt.Errorf("No credentials provided for AAD application %s", config.AADClientID)
+}
+
+// GetNetworkServicePrincipalToken creates a new service principal token based on the configuration
+func GetNetworkServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (*adal.ServicePrincipalToken, error) {
+	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, config.NetworkResourceTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("creating the OAuth config: %v", err)
+	}
+
+	if len(config.AADClientSecret) > 0 {
+		klog.V(2).Infoln("azure: using client_id+client_secret to retrieve access token")
+		return adal.NewServicePrincipalToken(
+			*oauthConfig,
+			config.AADClientID,
+			config.AADClientSecret,
+			env.ServiceManagementEndpoint)
+	}
+
+	return nil, fmt.Errorf("No credentials provided for AAD application %s", config.AADClientID)
+}
+
+// GetMultiTenantServicePrincipalToken creates a new service principal token based on the configuration
+func GetMultiTenantServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (*adal.ServicePrincipalToken, error) {
+	apiVer := "1.0"
+	multiTenantOAuthConfig, err := adal.NewMultiTenantOAuthConfig(env.ActiveDirectoryEndpoint, config.TenantID, config.networkResourceTenantID, &apiVer)
+	if err != nil {
+		return nil, fmt.Errorf("creating the OAuth config: %v", err)
+	}
+
+	if len(config.AADClientSecret) > 0 {
+		klog.V(2).Infoln("azure: using client_id+client_secret to retrieve multi tenant access token")
+		return adal.NewMultiTenantServicePrincipalToken(
+			*oauthConfig,
+			config.AADClientID,
+			config.AADClientSecret,
 			env.ServiceManagementEndpoint)
 	}
 
