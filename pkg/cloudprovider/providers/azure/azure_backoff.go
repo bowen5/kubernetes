@@ -123,7 +123,7 @@ func (az *Cloud) CreateOrUpdateSGWithRetry(service *v1.Service, sg network.Secur
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.SecurityGroupsClient.CreateOrUpdate(ctx, az.ResourceGroup, *sg.Name, sg)
+		resp, err := az.SecurityGroupsClient.CreateOrUpdate(ctx, az.NetworkResourceResourceGroup, *sg.Name, sg)
 		klog.V(10).Infof("SecurityGroupsClient.CreateOrUpdate(%s): end", *sg.Name)
 		done, err := az.processHTTPRetryResponse(service, "CreateOrUpdateSecurityGroup", resp, err)
 		if done && err == nil {
@@ -140,7 +140,7 @@ func (az *Cloud) CreateOrUpdateLBWithRetry(service *v1.Service, lb network.LoadB
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.LoadBalancerClient.CreateOrUpdate(ctx, az.ResourceGroup, *lb.Name, lb)
+		resp, err := az.LoadBalancerClient.CreateOrUpdate(ctx, az.NetworkResourceResourceGroup, *lb.Name, lb)
 		klog.V(10).Infof("LoadBalancerClient.CreateOrUpdate(%s): end", *lb.Name)
 		done, err := az.processHTTPRetryResponse(service, "CreateOrUpdateLoadBalancer", resp, err)
 		if done && err == nil {
@@ -160,15 +160,15 @@ func (az *Cloud) ListLBWithRetry(service *v1.Service) ([]network.LoadBalancer, e
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		allLBs, retryErr = az.LoadBalancerClient.List(ctx, az.ResourceGroup)
+		allLBs, retryErr = az.LoadBalancerClient.List(ctx, az.NetworkResourceResourceGroup)
 		if retryErr != nil {
 			az.Event(service, v1.EventTypeWarning, "ListLoadBalancers", retryErr.Error())
 			klog.Errorf("LoadBalancerClient.List(%v) - backoff: failure, will retry,err=%v",
-				az.ResourceGroup,
+				az.NetworkResourceResourceGroup,
 				retryErr)
 			return false, retryErr
 		}
-		klog.V(2).Infof("LoadBalancerClient.List(%v) - backoff: success", az.ResourceGroup)
+		klog.V(2).Infof("LoadBalancerClient.List(%v) - backoff: success", az.NetworkResourceResourceGroup)
 		return true, nil
 	})
 	if err != nil {
@@ -246,7 +246,7 @@ func (az *Cloud) DeleteLBWithRetry(service *v1.Service, lbName string) error {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.LoadBalancerClient.Delete(ctx, az.ResourceGroup, lbName)
+		resp, err := az.LoadBalancerClient.Delete(ctx, az.NetworkResourceResourceGroup, lbName)
 		done, err := az.processHTTPRetryResponse(service, "DeleteLoadBalancer", resp, err)
 		if done && err == nil {
 			// Invalidate the cache right after deleting
@@ -262,7 +262,7 @@ func (az *Cloud) CreateOrUpdateRouteTableWithRetry(routeTable network.RouteTable
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.RouteTablesClient.CreateOrUpdate(ctx, az.ResourceGroup, az.RouteTableName, routeTable)
+		resp, err := az.RouteTablesClient.CreateOrUpdate(ctx, az.NetworkResourceResourceGroup, az.RouteTableName, routeTable)
 		return az.processHTTPRetryResponse(nil, "", resp, err)
 	})
 }
@@ -273,7 +273,7 @@ func (az *Cloud) CreateOrUpdateRouteWithRetry(route network.Route) error {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.RoutesClient.CreateOrUpdate(ctx, az.ResourceGroup, az.RouteTableName, *route.Name, route)
+		resp, err := az.RoutesClient.CreateOrUpdate(ctx, az.NetworkResourceResourceGroup, az.RouteTableName, *route.Name, route)
 		klog.V(10).Infof("RoutesClient.CreateOrUpdate(%s): end", *route.Name)
 		return az.processHTTPRetryResponse(nil, "", resp, err)
 	})
@@ -285,7 +285,7 @@ func (az *Cloud) DeleteRouteWithRetry(routeName string) error {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		resp, err := az.RoutesClient.Delete(ctx, az.ResourceGroup, az.RouteTableName, routeName)
+		resp, err := az.RoutesClient.Delete(ctx, az.NetworkResourceResourceGroup, az.RouteTableName, routeName)
 		klog.V(10).Infof("RoutesClient.Delete(%s): end", az.RouteTableName)
 		return az.processHTTPRetryResponse(nil, "", resp, err)
 	})

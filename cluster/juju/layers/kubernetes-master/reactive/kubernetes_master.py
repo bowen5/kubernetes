@@ -1897,7 +1897,7 @@ def _write_azure_snap_config(component):
         'resourceGroup': azure.resource_group,
         'location': azure.resource_group_location,
         'vnetName': azure.vnet_name,
-        'vnetResourceGroup': azure.vnet_resource_group,
+        'networkResourceResourceGroup': azure.network_resource_resource_group,
         'subnetName': azure.subnet_name,
         'securityGroupName': azure.security_group_name,
     }))

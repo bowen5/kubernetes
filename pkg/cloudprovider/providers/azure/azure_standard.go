@@ -29,7 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-03-01/compute"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-07-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
-
+	
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -87,8 +87,8 @@ func (az *Cloud) getAvailabilitySetID(resourceGroup, availabilitySetName string)
 func (az *Cloud) getFrontendIPConfigID(lbName, backendPoolName string) string {
 	return fmt.Sprintf(
 		frontendIPConfigIDTemplate,
-		az.SubscriptionID,
-		az.ResourceGroup,
+		az.NetworkResourceSubscriptionID,
+		az.NetworkResourceResourceGroup,
 		lbName,
 		backendPoolName)
 }
@@ -97,8 +97,8 @@ func (az *Cloud) getFrontendIPConfigID(lbName, backendPoolName string) string {
 func (az *Cloud) getBackendPoolID(lbName, backendPoolName string) string {
 	return fmt.Sprintf(
 		backendPoolIDTemplate,
-		az.SubscriptionID,
-		az.ResourceGroup,
+		az.NetworkResourceSubscriptionID,
+		az.NetworkResourceResourceGroup,
 		lbName,
 		backendPoolName)
 }
@@ -107,8 +107,8 @@ func (az *Cloud) getBackendPoolID(lbName, backendPoolName string) string {
 func (az *Cloud) getLoadBalancerProbeID(lbName, lbRuleName string) string {
 	return fmt.Sprintf(
 		loadBalancerProbeIDTemplate,
-		az.SubscriptionID,
-		az.ResourceGroup,
+		az.NetworkResourceSubscriptionID,
+		az.NetworkResourceResourceGroup,
 		lbName,
 		lbRuleName)
 }

@@ -114,7 +114,7 @@ func (az *Cloud) getRouteTable() (routeTable network.RouteTable, exists bool, er
 }
 
 func (az *Cloud) getPublicIPAddress(pipResourceGroup string, pipName string) (pip network.PublicIPAddress, exists bool, err error) {
-	resourceGroup := az.ResourceGroup
+	resourceGroup := az.NetworkResourceResourceGroup
 	if pipResourceGroup != "" {
 		resourceGroup = pipResourceGroup
 	}
@@ -142,8 +142,8 @@ func (az *Cloud) getSubnet(virtualNetworkName string, subnetName string) (subnet
 	var message string
 	var rg string
 
-	if len(az.VnetResourceGroup) > 0 {
-		rg = az.VnetResourceGroup
+	if len(az.NetworkResourceResourceGroup) > 0 {
+		rg = az.NetworkResourceResourceGroup
 	} else {
 		rg = az.ResourceGroup
 	}
@@ -232,7 +232,7 @@ func (az *Cloud) newLBCache() (*timedCache, error) {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
 
-		lb, err := az.LoadBalancerClient.Get(ctx, az.ResourceGroup, key, "")
+		lb, err := az.LoadBalancerClient.Get(ctx, az.NetworkResourceResourceGroup, key, "")
 		exists, message, realErr := checkResourceExistsFromError(err)
 		if realErr != nil {
 			return nil, realErr
@@ -253,7 +253,7 @@ func (az *Cloud) newNSGCache() (*timedCache, error) {
 	getter := func(key string) (interface{}, error) {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
-		nsg, err := az.SecurityGroupsClient.Get(ctx, az.ResourceGroup, key, "")
+		nsg, err := az.SecurityGroupsClient.Get(ctx, az.NetworkResourceResourceGroup, key, "")
 		exists, message, realErr := checkResourceExistsFromError(err)
 		if realErr != nil {
 			return nil, realErr
@@ -274,7 +274,7 @@ func (az *Cloud) newRouteTableCache() (*timedCache, error) {
 	getter := func(key string) (interface{}, error) {
 		ctx, cancel := getContextWithCancel()
 		defer cancel()
-		rt, err := az.RouteTablesClient.Get(ctx, az.ResourceGroup, key, "")
+		rt, err := az.RouteTablesClient.Get(ctx, az.NetworkResourceResourceGroup, key, "")
 		exists, message, realErr := checkResourceExistsFromError(err)
 		if realErr != nil {
 			return nil, realErr
