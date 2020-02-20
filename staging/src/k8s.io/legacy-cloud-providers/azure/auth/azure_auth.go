@@ -68,6 +68,16 @@ type AzureAuthConfig struct {
 	// ResourceManagerEndpoint is the cloud's resource manager endpoint. If set, cloud provider queries this endpoint
 	// in order to generate an autorest.Environment instance instead of using one of the pre-defined Environments.
 	ResourceManagerEndpoint string `json:"resourceManagerEndpoint,omitempty" yaml:"resourceManagerEndpoint,omitempty"`
+	// Configuration of creating and using network resources in different AAD Tenant than the one of the cluster
+	CrossTenantNetworkResourceConfig *CrossTenantNetworkResourceConfig `json:"crossTenantNetworkResource,omitempty" yaml:"crossTenantNetworkResource,omitempty"`
+}
+
+// CrossTenantNetworkResourceConfig holds cross tenant network resource related configuration
+type CrossTenantNetworkResourceConfig struct {
+	// The AAD Tenant ID for the Subscription that the network resources are deployed in
+	TenantID string `json:"tenantID,omitempty" yaml:"tenantID,omitempty"`
+	// The ID of the Azure Subscription that the network resources are deployed in
+	SubscriptionID string `json:"subscriptionID,omitempty" yaml:"subscriptionID,omitempty"`
 }
 
 // GetServicePrincipalToken creates a new service principal token based on the configuration
@@ -127,6 +137,78 @@ func GetServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (
 			certificate,
 			privateKey,
 			env.ServiceManagementEndpoint)
+	}
+
+	return nil, ErrorNoAuth
+}
+
+// GetMultiTenantServicePrincipalToken creates a new multi-tenant service principal token based on the configuration
+// PrimaryToken of the result is for the AAD Tenant specified by TenantID, and AuxiliaryToken of the result is for the AAD Tenant specified by CrossTenantNetworkResourceConfig.TenantID
+func GetMultiTenantServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (*adal.MultiTenantServicePrincipalToken, error) {
+	if config.CrossTenantNetworkResourceConfig == nil {
+		return nil, fmt.Errorf("crossTenantNetworkResource must be configured when getting multi-tenant service principal token")
+	}
+
+	if strings.EqualFold(config.IdentitySystem, ADFSIdentitySystem) {
+		return nil, fmt.Errorf("getting multi-tenant service principal token doesn't support for ADFS identity system")
+	}
+
+	if config.UseManagedIdentityExtension {
+		return nil, fmt.Errorf("getting multi-tenant service principal token doesn't support for managed identity")
+	}
+
+	multiTenantOAuthConfig, err := adal.NewMultiTenantOAuthConfig(
+		env.ActiveDirectoryEndpoint, config.TenantID, []string{config.CrossTenantNetworkResourceConfig.TenantID}, adal.OAuthOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("creating the multi-tenant OAuth config: %v", err)
+	}
+
+	if len(config.AADClientSecret) > 0 {
+		klog.V(2).Infoln("azure: using client_id+client_secret to retrieve multi-tenant access token")
+		return adal.NewMultiTenantServicePrincipalToken(
+			multiTenantOAuthConfig,
+			config.AADClientID,
+			config.AADClientSecret,
+			env.ServiceManagementEndpoint)
+	}
+
+	if len(config.AADClientCertPath) > 0 && len(config.AADClientCertPassword) > 0 {
+		return nil, fmt.Errorf("getting multi-tenant service principal token doesn't support for AAD Application client certificate authentication")
+	}
+
+	return nil, ErrorNoAuth
+}
+
+// GetNetworkResourceServicePrincipalToken creates a new service principal token for network resources tenant based on the configuration
+func GetNetworkResourceServicePrincipalToken(config *AzureAuthConfig, env *azure.Environment) (*adal.ServicePrincipalToken, error) {
+	if config.CrossTenantNetworkResourceConfig == nil {
+		return nil, fmt.Errorf("crossTenantNetworkResource must be configured when getting network resources service principal token")
+	}
+
+	if strings.EqualFold(config.IdentitySystem, ADFSIdentitySystem) {
+		return nil, fmt.Errorf("getting network resources service principal token doesn't support for ADFS identity system")
+	}
+
+	if config.UseManagedIdentityExtension {
+		return nil, fmt.Errorf("getting network resources service principal token doesn't support for managed identity")
+	}
+
+	oauthConfig, err := adal.NewOAuthConfigWithAPIVersion(env.ActiveDirectoryEndpoint, config.CrossTenantNetworkResourceConfig.TenantID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating the OAuth config for network resources tenant: %v", err)
+	}
+
+	if len(config.AADClientSecret) > 0 {
+		klog.V(2).Infoln("azure: using client_id+client_secret to retrieve access token for network resources tenant")
+		return adal.NewServicePrincipalToken(
+			*oauthConfig,
+			config.AADClientID,
+			config.AADClientSecret,
+			env.ServiceManagementEndpoint)
+	}
+
+	if len(config.AADClientCertPath) > 0 && len(config.AADClientCertPassword) > 0 {
+		return nil, fmt.Errorf("getting network resources service principal token doesn't support for AAD Application client certificate authentication")
 	}
 
 	return nil, ErrorNoAuth

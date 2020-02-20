@@ -26,12 +26,13 @@ import (
 
 // ClientConfig contains all essential information to create an Azure client.
 type ClientConfig struct {
-	Location                string
-	SubscriptionID          string
-	ResourceManagerEndpoint string
-	ServicePrincipalToken   *adal.ServicePrincipalToken
-	RateLimitConfig         *RateLimitConfig
-	Backoff                 *retry.Backoff
+	Location                         string
+	SubscriptionID                   string
+	ResourceManagerEndpoint          string
+	ServicePrincipalToken            *adal.ServicePrincipalToken
+	MultiTenantServicePrincipalToken *adal.MultiTenantServicePrincipalToken
+	RateLimitConfig                  *RateLimitConfig
+	Backoff                          *retry.Backoff
 
 	// Depracated configures (retry.Backoff is preferred).
 	// Those configurations would be removed after all Azure clients are moved to new implementations.

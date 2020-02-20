@@ -56,7 +56,12 @@ type Client struct {
 // New creates a new VMSS client with ratelimiting.
 func New(config *azclients.ClientConfig) *Client {
 	baseURI := config.ResourceManagerEndpoint
-	authorizer := autorest.NewBearerAuthorizer(config.ServicePrincipalToken)
+	var authorizer autorest.Authorizer = nil
+	if config.MultiTenantServicePrincipalToken != nil {
+		authorizer = autorest.NewMultiTenantServicePrincipalTokenAuthorizer(config.MultiTenantServicePrincipalToken)
+	} else {
+		authorizer = autorest.NewBearerAuthorizer(config.ServicePrincipalToken)
+	}
 	armClient := armclient.New(authorizer, baseURI, "", APIVersion, config.Location, config.Backoff)
 	rateLimiterReader, rateLimiterWriter := azclients.NewRateLimiter(config.RateLimitConfig)
 

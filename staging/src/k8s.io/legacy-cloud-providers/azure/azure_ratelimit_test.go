@@ -54,6 +54,10 @@ var (
 		"loadBalancerRateLimit": {
 			"cloudProviderRatelimit": false,
 		},
+		"crossTenantNetworkResource": {
+			"tenantId": "networkResourceTenantId",
+			"subscriptionId": "networkResourceSubscriptionId",
+		},
 		"availabilitySetNodesCacheTTLInSeconds": 100,
 		"vmssCacheTTLInSeconds": 100,
 		"vmssVirtualMachinesCacheTTLInSeconds": 100,
@@ -100,6 +104,10 @@ func TestParseConfig(t *testing.T) {
 			SubscriptionID:              "subscriptionId",
 			TenantID:                    "tenantId",
 			UseManagedIdentityExtension: true,
+			CrossTenantNetworkResourceConfig: &auth.CrossTenantNetworkResourceConfig{
+				TenantID:       "networkResourceTenantId",
+				SubscriptionID: "networkResourceSubscriptionId",
+			},
 		},
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 1,

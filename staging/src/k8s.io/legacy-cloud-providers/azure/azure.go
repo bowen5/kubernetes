@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
 
 	v1 "k8s.io/api/core/v1"
@@ -401,6 +402,20 @@ func (az *Cloud) InitializeCloudFromConfig(config *Config, fromSecret bool) erro
 		return err
 	}
 
+	var multiTenantServicePrincipalToken *adal.MultiTenantServicePrincipalToken = nil
+	var networkResourceServicePrincipalToken *adal.ServicePrincipalToken = nil
+	if config.CrossTenantNetworkResourceConfig != nil {
+		multiTenantServicePrincipalToken, err = auth.GetMultiTenantServicePrincipalToken(&config.AzureAuthConfig, env)
+		if err != nil {
+			return err
+		}
+
+		networkResourceServicePrincipalToken, err = auth.GetNetworkResourceServicePrincipalToken(&config.AzureAuthConfig, env)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Initialize rate limiting config options.
 	InitializeCloudProviderRateLimitConfig(&config.CloudProviderRateLimitConfig)
 
@@ -487,6 +502,7 @@ func (az *Cloud) InitializeCloudFromConfig(config *Config, fromSecret bool) erro
 		ShouldOmitCloudProviderBackoff: config.shouldOmitCloudProviderBackoff(),
 		Backoff:                        &retry.Backoff{Steps: 1},
 	}
+
 	if config.CloudProviderBackoff {
 		azClientConfig.Backoff = &retry.Backoff{
 			Steps:    config.CloudProviderBackoffRetries,
@@ -495,27 +511,44 @@ func (az *Cloud) InitializeCloudFromConfig(config *Config, fromSecret bool) erro
 			Jitter:   config.CloudProviderBackoffJitter,
 		}
 	}
-	az.RoutesClient = routeclient.New(azClientConfig.WithRateLimiter(config.RouteRateLimit))
-	az.SubnetsClient = subnetclient.New(azClientConfig.WithRateLimiter(config.SubnetsRateLimit))
+
 	az.InterfacesClient = interfaceclient.New(azClientConfig.WithRateLimiter(config.InterfaceRateLimit))
-	az.RouteTablesClient = routetableclient.New(azClientConfig.WithRateLimiter(config.RouteTableRateLimit))
-	az.LoadBalancerClient = loadbalancerclient.New(azClientConfig.WithRateLimiter(config.LoadBalancerRateLimit))
-	az.SecurityGroupsClient = securitygroupclient.New(azClientConfig.WithRateLimiter(config.SecurityGroupRateLimit))
-	az.PublicIPAddressesClient = publicipclient.New(azClientConfig.WithRateLimiter(config.PublicIPAddressRateLimit))
-	az.VirtualMachineScaleSetsClient = vmssclient.New(azClientConfig.WithRateLimiter(config.VirtualMachineScaleSetRateLimit))
 	az.VirtualMachineSizesClient = vmsizeclient.New(azClientConfig.WithRateLimiter(config.VirtualMachineSizeRateLimit))
 	az.SnapshotsClient = snapshotclient.New(azClientConfig.WithRateLimiter(config.SnapshotRateLimit))
 	az.StorageAccountClient = storageaccountclient.New(azClientConfig.WithRateLimiter(config.StorageAccountRateLimit))
-	az.VirtualMachinesClient = vmclient.New(azClientConfig.WithRateLimiter(config.VirtualMachineRateLimit))
 	az.DisksClient = diskclient.New(azClientConfig.WithRateLimiter(config.DiskRateLimit))
 	// fileClient is not based on armclient, but it's still backoff retried.
 	az.FileClient = newAzureFileClient(env, azClientConfig.Backoff)
+
+	vmClientConfig := azClientConfig.WithRateLimiter(config.VirtualMachineRateLimit)
+	vmClientConfig.MultiTenantServicePrincipalToken = multiTenantServicePrincipalToken
+	az.VirtualMachinesClient = vmclient.New(vmClientConfig)
+
+	vmssClientConfig := azClientConfig.WithRateLimiter(config.VirtualMachineScaleSetRateLimit)
+	vmssClientConfig.MultiTenantServicePrincipalToken = multiTenantServicePrincipalToken
+	az.VirtualMachineScaleSetsClient = vmssclient.New(vmssClientConfig)
 
 	// Error "not an active Virtual Machine Scale Set VM" is not retriable for VMSS VM.
 	// But http.StatusNotFound is retriable because of ARM replication latency.
 	vmssVMClientConfig := azClientConfig.WithRateLimiter(config.VirtualMachineScaleSetRateLimit)
 	vmssVMClientConfig.Backoff = vmssVMClientConfig.Backoff.WithNonRetriableErrors([]string{vmssVMNotActiveErrorMessage}).WithRetriableHTTPStatusCodes([]int{http.StatusNotFound})
+	vmssVMClientConfig.MultiTenantServicePrincipalToken = multiTenantServicePrincipalToken
 	az.VirtualMachineScaleSetVMsClient = vmssvmclient.New(vmssVMClientConfig)
+
+	networkResourceClientConfig := azClientConfig
+	if networkResourceServicePrincipalToken != nil {
+		newClientConfig := *networkResourceClientConfig
+		newClientConfig.SubscriptionID = config.CrossTenantNetworkResourceConfig.SubscriptionID
+		newClientConfig.ServicePrincipalToken = networkResourceServicePrincipalToken
+		networkResourceClientConfig = &newClientConfig
+	}
+
+	az.RoutesClient = routeclient.New(networkResourceClientConfig.WithRateLimiter(config.RouteRateLimit))
+	az.SubnetsClient = subnetclient.New(networkResourceClientConfig.WithRateLimiter(config.SubnetsRateLimit))
+	az.RouteTablesClient = routetableclient.New(networkResourceClientConfig.WithRateLimiter(config.RouteTableRateLimit))
+	az.LoadBalancerClient = loadbalancerclient.New(networkResourceClientConfig.WithRateLimiter(config.LoadBalancerRateLimit))
+	az.SecurityGroupsClient = securitygroupclient.New(networkResourceClientConfig.WithRateLimiter(config.SecurityGroupRateLimit))
+	az.PublicIPAddressesClient = publicipclient.New(networkResourceClientConfig.WithRateLimiter(config.PublicIPAddressRateLimit))
 
 	if az.MaximumLoadBalancerRuleCount == 0 {
 		az.MaximumLoadBalancerRuleCount = maximumLoadBalancerRuleCount
