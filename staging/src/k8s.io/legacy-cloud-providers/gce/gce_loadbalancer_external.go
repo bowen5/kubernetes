@@ -591,16 +591,32 @@ func (g *Cloud) updateTargetPool(loadBalancerName string, hosts []*gceInstance) 
 		toRemove = append(toRemove, &compute.InstanceReference{Instance: link})
 	}
 
-	if len(toAdd) > 0 {
-		if err := g.AddInstancesToTargetPool(loadBalancerName, g.region, toAdd); err != nil {
+	for len(toAdd) > 0 {
+		// Do not remove more than maxInstancesPerTargetPoolUpdate in a single call.
+		instancesCount := len(toAdd)
+		if instancesCount > maxInstancesPerTargetPoolUpdate {
+			instancesCount = maxInstancesPerTargetPoolUpdate
+		}
+		// The operation to add 1000 instances is fairly long (may take minutes), so
+		// we don't need to worry about saturating QPS limits.
+		if err := g.AddInstancesToTargetPool(loadBalancerName, g.region, toAdd[:instancesCount]); err != nil {
 			return err
 		}
+		toAdd = toAdd[instancesCount:]
 	}
 
-	if len(toRemove) > 0 {
-		if err := g.RemoveInstancesFromTargetPool(loadBalancerName, g.region, toRemove); err != nil {
+	for len(toRemove) > 0 {
+		// Do not remove more than maxInstancesPerTargetPoolUpdate in a single call.
+		instancesCount := len(toRemove)
+		if instancesCount > maxInstancesPerTargetPoolUpdate {
+			instancesCount = maxInstancesPerTargetPoolUpdate
+		}
+		// The operation to remove 1000 instances is fairly long (may take minutes), so
+		// we don't need to worry about saturating QPS limits.
+		if err := g.RemoveInstancesFromTargetPool(loadBalancerName, g.region, toRemove[:instancesCount]); err != nil {
 			return err
 		}
+		toRemove = toRemove[instancesCount:]
 	}
 
 	// Try to verify that the correct number of nodes are now in the target pool.
@@ -1060,6 +1076,18 @@ func ensureStaticIP(s CloudAddressService, name, serviceName, region, existingIP
 		existed = true
 	}
 
+	// If address exists, get it by IP, because name might be different.
+	// This can specifically happen if the IP was changed from ephemeral to static,
+	// which results in a new name for the IP.
+	if existingIP != "" {
+		addr, err := s.GetRegionAddressByIP(region, existingIP)
+		if err != nil {
+			return "", false, fmt.Errorf("error getting static IP address: %v", err)
+		}
+		return addr.Address, existed, nil
+	}
+
+	// Otherwise, get address by name
 	addr, err := s.GetRegionAddress(name, region)
 	if err != nil {
 		return "", false, fmt.Errorf("error getting static IP address: %v", err)

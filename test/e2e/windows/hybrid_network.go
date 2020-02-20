@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/test/e2e/framework"
+	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"github.com/onsi/ginkgo"
@@ -35,7 +36,7 @@ const (
 )
 
 var (
-	windowsBusyBoximage = imageutils.GetE2EImage(imageutils.TestWebserver)
+	windowsBusyBoximage = imageutils.GetE2EImage(imageutils.Agnhost)
 	linuxBusyBoxImage   = "docker.io/library/nginx:1.15-alpine"
 )
 
@@ -43,7 +44,7 @@ var _ = SIGDescribe("Hybrid cluster network", func() {
 	f := framework.NewDefaultFramework("hybrid-network")
 
 	ginkgo.BeforeEach(func() {
-		framework.SkipUnlessNodeOSDistroIs("windows")
+		e2eskipper.SkipUnlessNodeOSDistroIs("windows")
 	})
 
 	ginkgo.Context("for all supported CNIs", func() {
@@ -52,6 +53,7 @@ var _ = SIGDescribe("Hybrid cluster network", func() {
 			ginkgo.By("creating linux and windows pods")
 			linuxPod := createTestPod(f, linuxBusyBoxImage, linuxOS)
 			windowsPod := createTestPod(f, windowsBusyBoximage, windowsOS)
+			windowsPod.Spec.Containers[0].Args = []string{"test-webserver"}
 
 			ginkgo.By("checking connectivity to 8.8.8.8 53 (google.com) from Linux")
 			assertConsistentConnectivity(f, linuxPod.ObjectMeta.Name, linuxOS, linuxCheck("8.8.8.8", 53))
@@ -116,7 +118,7 @@ func createTestPod(f *framework.Framework, image string, os string) *v1.Pod {
 				},
 			},
 			NodeSelector: map[string]string{
-				"beta.kubernetes.io/os": os,
+				"kubernetes.io/os": os,
 			},
 		},
 	}

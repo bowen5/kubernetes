@@ -36,6 +36,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	genericfeatures "k8s.io/apiserver/pkg/features"
@@ -234,14 +235,18 @@ func newServiceInfo(svcPortName proxy.ServicePortName, port *v1.ServicePort, ser
 	if err != nil {
 		preserveDIP = false
 	}
+	// targetPort is zero if it is specified as a name in port.TargetPort.
+	// Its real value would be got later from endpoints.
+	targetPort := 0
+	if port.TargetPort.Type == intstr.Int {
+		targetPort = port.TargetPort.IntValue()
+	}
 	info := &serviceInfo{
-		clusterIP: net.ParseIP(service.Spec.ClusterIP),
-		port:      int(port.Port),
-		protocol:  port.Protocol,
-		nodePort:  int(port.NodePort),
-		// targetPort is zero if it is specified as a name in port.TargetPort.
-		// Its real value would be got later from endpoints.
-		targetPort: port.TargetPort.IntValue(),
+		clusterIP:  net.ParseIP(service.Spec.ClusterIP),
+		port:       int(port.Port),
+		protocol:   port.Protocol,
+		nodePort:   int(port.NodePort),
+		targetPort: targetPort,
 		// Deep-copy in case the service instance changes
 		loadBalancerStatus:       *service.Status.LoadBalancer.DeepCopy(),
 		sessionAffinityType:      service.Spec.SessionAffinity,
@@ -1002,7 +1007,6 @@ func (proxier *Proxier) syncProxyRules() {
 	start := time.Now()
 	defer func() {
 		SyncProxyRulesLatency.Observe(metrics.SinceInSeconds(start))
-		DeprecatedSyncProxyRulesLatency.Observe(metrics.SinceInMicroseconds(start))
 		klog.V(4).Infof("syncProxyRules took %v", time.Since(start))
 	}()
 	// don't sync rules till we've received services and endpoints
@@ -1087,6 +1091,7 @@ func (proxier *Proxier) syncProxyRules() {
 		klog.V(4).Infof("====Applying Policy for %s====", svcName)
 		// Create Remote endpoints for every endpoint, corresponding to the service
 		containsPublicIP := false
+		containsNodeIP := false
 
 		for _, ep := range proxier.endpointsMap[svcName] {
 			var newHnsEndpoint *endpointsInfo
@@ -1137,13 +1142,15 @@ func (proxier *Proxier) syncProxyRules() {
 						}
 						if ep.ip == rs.providerAddress {
 							providerAddress = rs.providerAddress
+							containsNodeIP = true
 						}
 					}
 					if len(providerAddress) == 0 {
-						klog.Errorf("Could not find provider address for %s", ep.ip)
+						klog.Infof("Could not find provider address for %s. Assuming it is a public IP", ep.ip)
 						providerAddress = proxier.nodeIP.String()
 						containsPublicIP = true
 					}
+
 					hnsEndpoint := &endpointsInfo{
 						ip:              ep.ip,
 						isLocal:         false,
@@ -1197,7 +1204,7 @@ func (proxier *Proxier) syncProxyRules() {
 		klog.V(4).Infof("Trying to Apply Policies for service %s", spew.Sdump(svcInfo))
 		var hnsLoadBalancer *loadBalancerInfo
 		var sourceVip = proxier.sourceVip
-		if containsPublicIP {
+		if containsPublicIP || containsNodeIP {
 			sourceVip = proxier.nodeIP.String()
 		}
 		hnsLoadBalancer, err := hns.getLoadBalancer(

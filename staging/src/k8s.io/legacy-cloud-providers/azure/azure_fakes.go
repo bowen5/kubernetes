@@ -34,7 +34,11 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/record"
 	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/legacy-cloud-providers/azure/auth"
+	azcache "k8s.io/legacy-cloud-providers/azure/cache"
 	"k8s.io/legacy-cloud-providers/azure/retry"
 )
 
@@ -292,6 +296,10 @@ func (fIC *fakeAzureInterfacesClient) GetVirtualMachineScaleSetNetworkInterface(
 		errors.New("Not such Interface"))
 }
 
+func (fIC *fakeAzureInterfacesClient) Delete(ctx context.Context, resourceGroupName string, networkInterfaceName string) *retry.Error {
+	return nil
+}
+
 func (fIC *fakeAzureInterfacesClient) setFakeStore(store map[string]map[string]network.Interface) {
 	fIC.mutex.Lock()
 	defer fIC.mutex.Unlock()
@@ -361,6 +369,10 @@ func (fVMC *fakeAzureVirtualMachinesClient) List(ctx context.Context, resourceGr
 	}
 
 	return result, nil
+}
+
+func (fVMC *fakeAzureVirtualMachinesClient) Delete(ctx context.Context, resourceGroupName string, VMName string) *retry.Error {
+	return nil
 }
 
 func (fVMC *fakeAzureVirtualMachinesClient) setFakeStore(store map[string]map[string]compute.VirtualMachine) {
@@ -548,7 +560,7 @@ func (fVMC *fakeVirtualMachineScaleSetVMsClient) setFakeStore(store map[string]m
 	fVMC.FakeStore = store
 }
 
-func (fVMC *fakeVirtualMachineScaleSetVMsClient) List(ctx context.Context, resourceGroupName string, virtualMachineScaleSetName string, filter string, selectParameter string, expand string) (result []compute.VirtualMachineScaleSetVM, err *retry.Error) {
+func (fVMC *fakeVirtualMachineScaleSetVMsClient) List(ctx context.Context, resourceGroupName string, virtualMachineScaleSetName string, expand string) (result []compute.VirtualMachineScaleSetVM, err *retry.Error) {
 	fVMC.mutex.Lock()
 	defer fVMC.mutex.Unlock()
 
@@ -661,9 +673,14 @@ func (fVMSSC *fakeVirtualMachineScaleSetsClient) UpdateInstances(ctx context.Con
 	return nil
 }
 
+func (fVMSSC *fakeVirtualMachineScaleSetsClient) DeleteInstances(ctx context.Context, resourceGroupName string, vmScaleSetName string, vmInstanceIDs compute.VirtualMachineScaleSetVMInstanceRequiredIDs) *retry.Error {
+	return nil
+}
+
 type fakeRoutesClient struct {
 	mutex     *sync.Mutex
 	FakeStore map[string]map[string]network.Route
+	Calls     []string
 }
 
 func newFakeRoutesClient() *fakeRoutesClient {
@@ -677,6 +694,8 @@ func (fRC *fakeRoutesClient) CreateOrUpdate(ctx context.Context, resourceGroupNa
 	fRC.mutex.Lock()
 	defer fRC.mutex.Unlock()
 
+	fRC.Calls = append(fRC.Calls, "CreateOrUpdate")
+
 	if _, ok := fRC.FakeStore[routeTableName]; !ok {
 		fRC.FakeStore[routeTableName] = make(map[string]network.Route)
 	}
@@ -688,6 +707,8 @@ func (fRC *fakeRoutesClient) CreateOrUpdate(ctx context.Context, resourceGroupNa
 func (fRC *fakeRoutesClient) Delete(ctx context.Context, resourceGroupName string, routeTableName string, routeName string) *retry.Error {
 	fRC.mutex.Lock()
 	defer fRC.mutex.Unlock()
+
+	fRC.Calls = append(fRC.Calls, "Delete")
 
 	if routes, ok := fRC.FakeStore[routeTableName]; ok {
 		if _, ok := routes[routeName]; ok {
@@ -767,7 +788,7 @@ type fakeStorageAccountClient struct {
 	mutex     *sync.Mutex
 	FakeStore map[string]map[string]storage.Account
 	Keys      storage.AccountListKeysResult
-	Accounts  storage.AccountListResult
+	Accounts  []storage.Account
 	Err       error
 }
 
@@ -820,7 +841,7 @@ func (fSAC *fakeStorageAccountClient) ListKeys(ctx context.Context, resourceGrou
 	return fSAC.Keys, nil
 }
 
-func (fSAC *fakeStorageAccountClient) ListByResourceGroup(ctx context.Context, resourceGroupName string) (result storage.AccountListResult, err *retry.Error) {
+func (fSAC *fakeStorageAccountClient) ListByResourceGroup(ctx context.Context, resourceGroupName string) (result []storage.Account, err *retry.Error) {
 	return fSAC.Accounts, nil
 }
 
@@ -856,6 +877,10 @@ func newFakeDisksClient() *fakeDisksClient {
 func (fDC *fakeDisksClient) CreateOrUpdate(ctx context.Context, resourceGroupName string, diskName string, diskParameter compute.Disk) *retry.Error {
 	fDC.mutex.Lock()
 	defer fDC.mutex.Unlock()
+
+	provisioningStateSucceeded := string(compute.ProvisioningStateSucceeded)
+	diskParameter.DiskProperties = &compute.DiskProperties{ProvisioningState: &provisioningStateSucceeded}
+	diskParameter.ID = &diskName
 
 	if _, ok := fDC.FakeStore[resourceGroupName]; !ok {
 		fDC.FakeStore[resourceGroupName] = make(map[string]compute.Disk)
@@ -958,7 +983,7 @@ func (f *fakeVMSet) EnsureBackendPoolDeleted(service *v1.Service, backendPoolID,
 	return fmt.Errorf("unimplemented")
 }
 
-func (f *fakeVMSet) AttachDisk(isManagedDisk bool, diskName, diskURI string, nodeName types.NodeName, lun int32, cachingMode compute.CachingTypes, diskEncryptionSetID string) error {
+func (f *fakeVMSet) AttachDisk(isManagedDisk bool, diskName, diskURI string, nodeName types.NodeName, lun int32, cachingMode compute.CachingTypes, diskEncryptionSetID string, writeAcceleratorEnabled bool) error {
 	return fmt.Errorf("unimplemented")
 }
 
@@ -966,10 +991,62 @@ func (f *fakeVMSet) DetachDisk(diskName, diskURI string, nodeName types.NodeName
 	return fmt.Errorf("unimplemented")
 }
 
-func (f *fakeVMSet) GetDataDisks(nodeName types.NodeName, crt cacheReadType) ([]compute.DataDisk, error) {
+func (f *fakeVMSet) GetDataDisks(nodeName types.NodeName, crt azcache.AzureCacheReadType) ([]compute.DataDisk, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
 func (f *fakeVMSet) GetPowerStatusByNodeName(name string) (string, error) {
 	return "", fmt.Errorf("unimplemented")
+}
+
+// GetTestCloud returns a fake azure cloud for unit tests in Azure related CSI drivers
+func GetTestCloud() (az *Cloud) {
+	az = &Cloud{
+		Config: Config{
+			AzureAuthConfig: auth.AzureAuthConfig{
+				TenantID:       "tenant",
+				SubscriptionID: "subscription",
+			},
+			ResourceGroup:                "rg",
+			VnetResourceGroup:            "rg",
+			RouteTableResourceGroup:      "rg",
+			SecurityGroupResourceGroup:   "rg",
+			Location:                     "westus",
+			VnetName:                     "vnet",
+			SubnetName:                   "subnet",
+			SecurityGroupName:            "nsg",
+			RouteTableName:               "rt",
+			PrimaryAvailabilitySetName:   "as",
+			MaximumLoadBalancerRuleCount: 250,
+			VMType:                       vmTypeStandard,
+		},
+		nodeZones:          map[string]sets.String{},
+		nodeInformerSynced: func() bool { return true },
+		nodeResourceGroups: map[string]string{},
+		unmanagedNodes:     sets.NewString(),
+		routeCIDRs:         map[string]string{},
+		eventRecorder:      &record.FakeRecorder{},
+	}
+	az.DisksClient = newFakeDisksClient()
+	az.InterfacesClient = newFakeAzureInterfacesClient()
+	az.LoadBalancerClient = newFakeAzureLBClient()
+	az.PublicIPAddressesClient = newFakeAzurePIPClient(az.Config.SubscriptionID)
+	az.RoutesClient = newFakeRoutesClient()
+	az.RouteTablesClient = newFakeRouteTablesClient()
+	az.SecurityGroupsClient = newFakeAzureNSGClient()
+	az.SubnetsClient = newFakeAzureSubnetsClient()
+	az.VirtualMachineScaleSetsClient = newFakeVirtualMachineScaleSetsClient()
+	az.VirtualMachineScaleSetVMsClient = newFakeVirtualMachineScaleSetVMsClient()
+	az.VirtualMachinesClient = newFakeAzureVirtualMachinesClient()
+	az.vmSet = newAvailabilitySet(az)
+	az.vmCache, _ = az.newVMCache()
+	az.lbCache, _ = az.newLBCache()
+	az.nsgCache, _ = az.newNSGCache()
+	az.rtCache, _ = az.newRouteTableCache()
+
+	common := &controllerCommon{cloud: az}
+	az.controllerCommon = common
+	az.ManagedDiskController = &ManagedDiskController{common: common}
+
+	return az
 }

@@ -44,9 +44,6 @@ func ValidateKubeSchedulerConfiguration(cc *config.KubeSchedulerConfiguration) f
 	for _, msg := range validation.IsValidSocketAddr(cc.MetricsBindAddress) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("metricsBindAddress"), cc.MetricsBindAddress, msg))
 	}
-	if cc.HardPodAffinitySymmetricWeight < 0 || cc.HardPodAffinitySymmetricWeight > 100 {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("hardPodAffinitySymmetricWeight"), cc.HardPodAffinitySymmetricWeight, "not in valid range [0-100]"))
-	}
 	if cc.PercentageOfNodesToScore < 0 || cc.PercentageOfNodesToScore > 100 {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("percentageOfNodesToScore"),
 			cc.PercentageOfNodesToScore, "not in valid range [0-100]"))
@@ -107,6 +104,10 @@ func ValidatePolicy(policy config.Policy) error {
 	}
 	if binders > 1 {
 		validationErrors = append(validationErrors, fmt.Errorf("Only one extender can implement bind, found %v", binders))
+	}
+
+	if policy.HardPodAffinitySymmetricWeight < 0 || policy.HardPodAffinitySymmetricWeight > 100 {
+		validationErrors = append(validationErrors, field.Invalid(field.NewPath("hardPodAffinitySymmetricWeight"), policy.HardPodAffinitySymmetricWeight, "not in valid range [0-100]"))
 	}
 	return utilerrors.NewAggregate(validationErrors)
 }

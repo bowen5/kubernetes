@@ -63,6 +63,13 @@ func TestEnsureStaticIP(t *testing.T) {
 	if err != nil || !existed || ip != ipPrime {
 		t.Fatalf(`ensureStaticIP(%v, %v, %v, %v, %v) = %v, %v, %v; want %v, true, nil`, gce, ipName, serviceName, gce.region, ip, ipPrime, existed, err, ip)
 	}
+
+	// Ensure call with different name
+	ipName = "another-name-for-static-ip"
+	ipPrime, existed, err = ensureStaticIP(gce, ipName, serviceName, gce.region, ip, cloud.NetworkTierDefault)
+	if err != nil || !existed || ip != ipPrime {
+		t.Fatalf(`ensureStaticIP(%v, %v, %v, %v, %v) = %v, %v, %v; want %v, true, nil`, gce, ipName, serviceName, gce.region, ip, ipPrime, existed, err, ip)
+	}
 }
 
 func TestEnsureStaticIPWithTier(t *testing.T) {
@@ -559,6 +566,53 @@ func TestForwardingRuleNeedsUpdate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTargetPoolAddsAndRemoveInstancesInBatches(t *testing.T) {
+	t.Parallel()
+
+	vals := DefaultTestClusterValues()
+	gce, err := fakeGCECloud(DefaultTestClusterValues())
+	require.NoError(t, err)
+
+	addInstanceCalls := 0
+	addInstanceHook := func(req *compute.TargetPoolsAddInstanceRequest) {
+		addInstanceCalls++
+	}
+	removeInstanceCalls := 0
+	removeInstanceHook := func(req *compute.TargetPoolsRemoveInstanceRequest) {
+		removeInstanceCalls++
+	}
+
+	err = registerTargetPoolAddInstanceHook(gce, addInstanceHook)
+	assert.NoError(t, err)
+	err = registerTargetPoolRemoveInstanceHook(gce, removeInstanceHook)
+	assert.NoError(t, err)
+
+	svc := fakeLoadbalancerService("")
+	nodeName := "default-node"
+	_, err = createExternalLoadBalancer(gce, svc, []string{nodeName}, vals.ClusterName, vals.ClusterID, vals.ZoneName)
+	assert.NoError(t, err)
+
+	// Insert large number of nodes to test batching.
+	additionalNodeNames := []string{}
+	for i := 0; i < 2*maxInstancesPerTargetPoolUpdate+2; i++ {
+		additionalNodeNames = append(additionalNodeNames, fmt.Sprintf("node-%d", i))
+	}
+	allNodes, err := createAndInsertNodes(gce, append([]string{nodeName}, additionalNodeNames...), vals.ZoneName)
+	assert.NoError(t, err)
+	err = gce.updateExternalLoadBalancer("", svc, allNodes)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 3, addInstanceCalls)
+
+	// Remove large number of nodes to test batching.
+	allNodes, err = createAndInsertNodes(gce, []string{nodeName}, vals.ZoneName)
+	assert.NoError(t, err)
+	err = gce.updateExternalLoadBalancer("", svc, allNodes)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 3, removeInstanceCalls)
 }
 
 func TestTargetPoolNeedsRecreation(t *testing.T) {

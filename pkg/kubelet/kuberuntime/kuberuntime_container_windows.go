@@ -20,6 +20,7 @@ package kuberuntime
 
 import (
 	"fmt"
+
 	"github.com/docker/docker/pkg/sysinfo"
 
 	"k8s.io/api/core/v1"
@@ -27,11 +28,14 @@ import (
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	kubefeatures "k8s.io/kubernetes/pkg/features"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/securitycontext"
+
+	"k8s.io/klog"
 )
 
 // applyPlatformSpecificContainerConfig applies platform specific configurations to runtimeapi.ContainerConfig.
-func (m *kubeGenericRuntimeManager) applyPlatformSpecificContainerConfig(config *runtimeapi.ContainerConfig, container *v1.Container, pod *v1.Pod, uid *int64, username string) error {
+func (m *kubeGenericRuntimeManager) applyPlatformSpecificContainerConfig(config *runtimeapi.ContainerConfig, container *v1.Container, pod *v1.Pod, uid *int64, username string, _ *kubecontainer.ContainerID) error {
 	windowsConfig, err := m.generateWindowsContainerConfig(container, pod, uid, username)
 	if err != nil {
 		return err
@@ -81,6 +85,28 @@ func (m *kubeGenericRuntimeManager) generateWindowsContainerConfig(container *v1
 		cpuShares = milliCPUToShares(cpuRequest.MilliValue(), isolatedByHyperv)
 	}
 	wc.Resources.CpuShares = cpuShares
+
+	if !isolatedByHyperv {
+		// The processor resource controls are mutually exclusive on
+		// Windows Server Containers, the order of precedence is
+		// CPUCount first, then CPUShares, and CPUMaximum last.
+		if wc.Resources.CpuCount > 0 {
+			if wc.Resources.CpuShares > 0 {
+				wc.Resources.CpuShares = 0
+				klog.Warningf("Mutually exclusive options: CPUCount priority > CPUShares priority on Windows Server Containers. CPUShares should be ignored")
+			}
+			if wc.Resources.CpuMaximum > 0 {
+				wc.Resources.CpuMaximum = 0
+				klog.Warningf("Mutually exclusive options: CPUCount priority > CPUMaximum priority on Windows Server Containers. CPUMaximum should be ignored")
+			}
+		} else if wc.Resources.CpuShares > 0 {
+			if wc.Resources.CpuMaximum > 0 {
+				wc.Resources.CpuMaximum = 0
+				klog.Warningf("Mutually exclusive options: CPUShares priority > CPUMaximum priority on Windows Server Containers. CPUMaximum should be ignored")
+			}
+
+		}
+	}
 
 	memoryLimit := container.Resources.Limits.Memory().Value()
 	if memoryLimit != 0 {

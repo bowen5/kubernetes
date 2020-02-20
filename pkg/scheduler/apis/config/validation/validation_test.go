@@ -32,10 +32,9 @@ func TestValidateKubeSchedulerConfiguration(t *testing.T) {
 	podInitialBackoffSeconds := int64(1)
 	podMaxBackoffSeconds := int64(1)
 	validConfig := &config.KubeSchedulerConfiguration{
-		SchedulerName:                  "me",
-		HealthzBindAddress:             "0.0.0.0:10254",
-		MetricsBindAddress:             "0.0.0.0:10254",
-		HardPodAffinitySymmetricWeight: 80,
+		SchedulerName:      "me",
+		HealthzBindAddress: "0.0.0.0:10254",
+		MetricsBindAddress: "0.0.0.0:10254",
 		ClientConnection: componentbaseconfig.ClientConnectionConfiguration{
 			AcceptContentTypes: "application/json",
 			ContentType:        "application/json",
@@ -66,12 +65,6 @@ func TestValidateKubeSchedulerConfiguration(t *testing.T) {
 		BindTimeoutSeconds:       testTimeout,
 		PercentageOfNodesToScore: 35,
 	}
-
-	HardPodAffinitySymmetricWeightGt100 := validConfig.DeepCopy()
-	HardPodAffinitySymmetricWeightGt100.HardPodAffinitySymmetricWeight = 120
-
-	HardPodAffinitySymmetricWeightLt0 := validConfig.DeepCopy()
-	HardPodAffinitySymmetricWeightLt0.HardPodAffinitySymmetricWeight = -1
 
 	resourceNameNotSet := validConfig.DeepCopy()
 	resourceNameNotSet.LeaderElection.ResourceName = ""
@@ -129,14 +122,6 @@ func TestValidateKubeSchedulerConfiguration(t *testing.T) {
 		"bad-metrics-host-invalid": {
 			expectedToFail: true,
 			config:         metricsBindAddrHostInvalid,
-		},
-		"bad-hard-pod-affinity-symmetric-weight-lt-0": {
-			expectedToFail: true,
-			config:         HardPodAffinitySymmetricWeightGt100,
-		},
-		"bad-hard-pod-affinity-symmetric-weight-gt-100": {
-			expectedToFail: true,
-			config:         HardPodAffinitySymmetricWeightLt0,
 		},
 		"bad-percentage-of-nodes-to-score": {
 			expectedToFail: true,
@@ -261,6 +246,20 @@ func TestValidatePolicy(t *testing.T) {
 				},
 			},
 			expected: errors.New("ServiceAntiAffinity  priority \"customPriority2\" has a different weight with \"customPriority1\""),
+		},
+		{
+			name: "invalid hardPodAffinitySymmetricWeight, above the range",
+			policy: config.Policy{
+				HardPodAffinitySymmetricWeight: 101,
+			},
+			expected: errors.New("hardPodAffinitySymmetricWeight: Invalid value: 101: not in valid range [0-100]"),
+		},
+		{
+			name: "invalid hardPodAffinitySymmetricWeight, below the range",
+			policy: config.Policy{
+				HardPodAffinitySymmetricWeight: -1,
+			},
+			expected: errors.New("hardPodAffinitySymmetricWeight: Invalid value: -1: not in valid range [0-100]"),
 		},
 	}
 
