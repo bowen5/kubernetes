@@ -402,8 +402,8 @@ func (az *Cloud) InitializeCloudFromConfig(config *Config, fromSecret bool) erro
 		return err
 	}
 
-	var multiTenantServicePrincipalToken *adal.MultiTenantServicePrincipalToken = nil
-	var networkResourceServicePrincipalToken *adal.ServicePrincipalToken = nil
+	var multiTenantServicePrincipalToken *adal.MultiTenantServicePrincipalToken
+	var networkResourceServicePrincipalToken *adal.ServicePrincipalToken
 	if config.CrossTenantNetworkResourceConfig != nil {
 		multiTenantServicePrincipalToken, err = auth.GetMultiTenantServicePrincipalToken(&config.AzureAuthConfig, env)
 		if err != nil {

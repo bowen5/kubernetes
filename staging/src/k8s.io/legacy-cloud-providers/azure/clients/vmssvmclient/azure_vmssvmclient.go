@@ -56,7 +56,7 @@ type Client struct {
 // New creates a new vmssVM client with ratelimiting.
 func New(config *azclients.ClientConfig) *Client {
 	baseURI := config.ResourceManagerEndpoint
-	var authorizer autorest.Authorizer = nil
+	var authorizer autorest.Authorizer
 	if config.MultiTenantServicePrincipalToken != nil {
 		authorizer = autorest.NewMultiTenantServicePrincipalTokenAuthorizer(config.MultiTenantServicePrincipalToken)
 	} else {
